@@ -1,0 +1,15 @@
+{
+  "name": "the-robot-test",
+  "version": "4.0.0",
+  "description": "The Robot Test V4.0 - Darker and Edgier. Take the test, get your score, climb the scoreboard.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
