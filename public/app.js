@@ -17,8 +17,17 @@ function showTab(which) {
 
 // ---- boot ----
 (async function init() {
-  DATA = await fetch("/api/questions").then(r => r.json());
-  buildQuiz();
+  try {
+    DATA = await fetch("/api/questions").then(r => r.json());
+    buildQuiz();
+    // questions are ready — now it's safe to start
+    const b = $("#startBtn");
+    b.disabled = false;
+    b.textContent = "Begin →";
+  } catch (e) {
+    $("#introErr").textContent = "Couldn't load the test. Refresh to try again.";
+    return;
+  }
   const me = await fetch("/api/me").then(r => r.json());
   if (me.hasAccount) {
     $("#intro").innerHTML =
@@ -95,6 +104,7 @@ document.addEventListener("keydown", (e) => {
 
 // ---- start ----
 $("#startBtn").addEventListener("click", () => {
+  if (!FLAT.length) { $("#introErr").textContent = "Still loading — one sec."; return; }
   const name = $("#name").value.trim();
   if (!name) { $("#introErr").textContent = "Enter a name first."; return; }
   myName = name;
