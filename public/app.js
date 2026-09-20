@@ -28,43 +28,70 @@ function showTab(which) {
   }
 })();
 
+let FLAT = [];       // flattened questions with category info
+let idx = 0;         // current question index
+let animating = false;
+
 function buildQuiz() {
-  const total = DATA.categories.reduce((n, c) => n + c.questions.length, 0);
-  $("#total").textContent = total;
+  FLAT = [];
+  for (const cat of DATA.categories)
+    for (const q of cat.questions)
+      FLAT.push({ ...q, catName: cat.name, catColor: cat.color });
+  $("#total").textContent = FLAT.length;
   $("#rMax").textContent = DATA.max;
-
-  const host = $("#cats");
-  host.innerHTML = "";
-  for (const cat of DATA.categories) {
-    const div = document.createElement("div");
-    div.className = "cat";
-    div.style.background = "rgba(255,255,255,.02)";
-    const head = document.createElement("h2");
-    head.textContent = cat.name;
-    head.style.background = cat.color;
-    div.appendChild(head);
-
-    for (const q of cat.questions) {
-      const row = document.createElement("div");
-      row.className = "q";
-      row.innerHTML =
-        `<div class="check">✓</div><div class="txt">${escapeHtml(q.text)}</div><div class="pts">+${q.pts}</div>`;
-      row.addEventListener("click", () => {
-        if (answers.has(q.id)) { answers.delete(q.id); row.classList.remove("on"); }
-        else { answers.add(q.id); row.classList.add("on"); }
-        updateProgress();
-      });
-      div.appendChild(row);
-    }
-    host.appendChild(div);
-  }
 }
 
-function updateProgress() {
-  const total = Number($("#total").textContent);
-  $("#answered").textContent = answers.size;
-  $("#barFill").style.width = total ? (answers.size / total * 100) + "%" : "0%";
+function renderQuestion(dir) {
+  const q = FLAT[idx];
+  const card = $("#qcard");
+  $("#qCat").textContent = q.catName;
+  $("#qCat").style.background = q.catColor;
+  $("#qText").textContent = q.text;
+  $("#qPts").textContent = "+" + q.pts;
+  $("#qnum").textContent = idx + 1;
+  $("#barFill").style.width = (idx / FLAT.length * 100) + "%";
+  $("#btnBack").disabled = idx === 0;
+
+  // reflect any previous answer visually (in case of going back)
+  $("#btnYes").style.outline = answers.has(q.id) ? "3px solid #fff" : "none";
+  $("#btnNo").style.outline = (!answers.has(q.id) && q.seen) ? "3px solid #fff" : "none";
+
+  card.classList.remove("in-r", "in-l", "out-l", "out-r");
+  void card.offsetWidth; // restart animation
+  card.classList.add(dir === "back" ? "in-l" : "in-r");
 }
+
+function advance(dir) {
+  if (animating) return;
+  animating = true;
+  const card = $("#qcard");
+  card.classList.remove("in-r", "in-l");
+  card.classList.add(dir === "back" ? "out-r" : "out-l");
+  setTimeout(() => {
+    if (dir === "back") { idx = Math.max(0, idx - 1); renderQuestion("back"); }
+    else if (idx >= FLAT.length - 1) { animating = false; return submitTest(); }
+    else { idx++; renderQuestion("fwd"); }
+    animating = false;
+  }, 200);
+}
+
+function answerCurrent(yes) {
+  const q = FLAT[idx];
+  q.seen = true;
+  if (yes) answers.add(q.id); else answers.delete(q.id);
+  advance("fwd");
+}
+
+$("#btnYes").addEventListener("click", () => answerCurrent(true));
+$("#btnNo").addEventListener("click", () => answerCurrent(false));
+$("#btnBack").addEventListener("click", () => advance("back"));
+// keyboard: Y / N / arrows
+document.addEventListener("keydown", (e) => {
+  if ($("#quiz").classList.contains("hidden")) return;
+  if (e.key === "y" || e.key === "Y" || e.key === "ArrowRight") answerCurrent(true);
+  else if (e.key === "n" || e.key === "N") answerCurrent(false);
+  else if (e.key === "ArrowLeft") advance("back");
+});
 
 // ---- start ----
 $("#startBtn").addEventListener("click", () => {
@@ -74,13 +101,15 @@ $("#startBtn").addEventListener("click", () => {
   $("#intro").classList.add("hidden");
   $("#quiz").classList.remove("hidden");
   window.scrollTo({ top: 0 });
+  idx = 0;
+  renderQuestion("fwd");
 });
 $("#name").addEventListener("keydown", e => { if (e.key === "Enter") $("#startBtn").click(); });
 
 // ---- submit ----
-$("#submitBtn").addEventListener("click", async () => {
-  $("#submitBtn").disabled = true;
-  $("#quizErr").textContent = "";
+async function submitTest() {
+  $("#quizErr").textContent = "Tallying…";
+  $("#barFill").style.width = "100%";
   try {
     const res = await fetch("/api/submit", {
       method: "POST",
@@ -90,15 +119,14 @@ $("#submitBtn").addEventListener("click", async () => {
     const data = await res.json();
     if (!res.ok) {
       $("#quizErr").textContent = data.error || "Something went wrong.";
-      $("#submitBtn").disabled = false;
       return;
     }
+    $("#quizErr").textContent = "";
     showResult(data);
   } catch (e) {
     $("#quizErr").textContent = "Network error. Is the server running?";
-    $("#submitBtn").disabled = false;
   }
-});
+}
 
 function showResult(data) {
   $("#quiz").classList.add("hidden");
