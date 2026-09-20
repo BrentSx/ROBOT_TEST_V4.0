@@ -12,6 +12,13 @@ const MAX = maxScore();
 
 app.set("trust proxy", true); // so req.ip reflects the real client behind a proxy
 app.use(express.json());
+// Always revalidate HTML/JS so a new deploy is never masked by a stale cache.
+app.use((req, res, next) => {
+  if (/\.(html|js)$/.test(req.path) || req.path === "/") {
+    res.set("Cache-Control", "no-cache, must-revalidate");
+  }
+  next();
+});
 app.use(express.static(path.join(__dirname, "public")));
 
 // ---- tiny JSON "database" -------------------------------------------------

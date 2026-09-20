@@ -16,19 +16,30 @@ function showTab(which) {
 }
 
 // ---- boot ----
-(async function init() {
-  try {
-    DATA = await fetch("/api/questions").then(r => r.json());
-    buildQuiz();
-    // questions are ready — now it's safe to start
-    const b = $("#startBtn");
-    b.disabled = false;
-    b.textContent = "Begin →";
-  } catch (e) {
-    $("#introErr").textContent = "Couldn't load the test. Refresh to try again.";
-    return;
+// Load questions with a timeout + retries so a hung/cached request can't
+// lock the UI forever. Safe to call repeatedly; no-ops once loaded.
+async function ensureLoaded() {
+  if (FLAT.length) return true;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 8000);
+      DATA = await fetch("/api/questions", { cache: "no-store", signal: ctrl.signal })
+        .then(r => r.json());
+      clearTimeout(t);
+      buildQuiz();
+      return true;
+    } catch (e) {
+      await new Promise(r => setTimeout(r, 600));
+    }
   }
-  const me = await fetch("/api/me").then(r => r.json());
+  return false;
+}
+
+(async function init() {
+  ensureLoaded(); // preload in the background; the Begin click will await it too
+  let me = { hasAccount: false };
+  try { me = await fetch("/api/me", { cache: "no-store" }).then(r => r.json()); } catch (e) {}
   if (me.hasAccount) {
     $("#intro").innerHTML =
       `<h2 style="margin-top:0; text-align:center">You've already been tested, sir.</h2>
@@ -103,10 +114,22 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ---- start ----
-$("#startBtn").addEventListener("click", () => {
-  if (!FLAT.length) { $("#introErr").textContent = "Still loading — one sec."; return; }
+$("#startBtn").addEventListener("click", async () => {
   const name = $("#name").value.trim();
   if (!name) { $("#introErr").textContent = "Enter a name first."; return; }
+
+  const b = $("#startBtn");
+  if (!FLAT.length) {
+    $("#introErr").textContent = "";
+    b.disabled = true; b.textContent = "Loading…";
+    const ok = await ensureLoaded();
+    b.disabled = false; b.textContent = "Begin →";
+    if (!ok) {
+      $("#introErr").textContent = "Couldn't load the test. Check your connection and tap Begin again.";
+      return;
+    }
+  }
+
   myName = name;
   $("#intro").classList.add("hidden");
   $("#quiz").classList.remove("hidden");
